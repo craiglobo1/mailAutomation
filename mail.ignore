@@ -1,0 +1,163 @@
+package main
+
+import (
+	"net/smtp"
+	"fyne.io/fyne/app"
+	"fyne.io/fyne/widget"
+	"fyne.io/fyne/container"
+	"fyne.io/fyne"
+	"fmt"
+	// "os"
+	"io/ioutil"
+	"bytes"
+	"encoding/base64"
+	"path/filepath"
+	"mime/multipart"
+
+)
+
+
+var (
+	host       = "smtp.gmail.com"
+	username   = "vmsautomail@gmail.com"
+	password   = "vmsmail123$" 
+	portNumber = "587"
+)
+
+
+type Sender struct {
+	auth smtp.Auth
+}
+
+type Message struct {
+	To          []string
+	Subject     string
+	Body        string
+	Attachments map[string][]byte
+}
+
+func New() *Sender {
+	auth := smtp.PlainAuth("", username, password, host)
+	return &Sender{auth}
+}
+
+func (s *Sender) Send(m *Message) error {
+	return smtp.SendMail(fmt.Sprintf("%s:%s", host, portNumber), s.auth, username, m.To, m.ToBytes())
+}
+
+func NewMessage(s, b string) *Message {
+	return &Message{Subject: s, Body: b, Attachments: make(map[string][]byte)}
+}
+
+func (m *Message) AttachFile(src string) error {
+	b, err := ioutil.ReadFile(src)
+	if err != nil {
+		return err
+	}
+
+	_, fileName := filepath.Split(src)
+	m.Attachments[fileName] = b
+	return nil
+}
+
+func (m *Message) ToBytes() []byte {
+	buf := bytes.NewBuffer(nil)
+	withAttachments := len(m.Attachments) > 0
+
+	buf.WriteString(fmt.Sprintf("Subject: %s\n", m.Subject))
+	buf.WriteString("MIME-Version: 1.0\n")
+	writer := multipart.NewWriter(buf)
+	boundary := writer.Boundary()
+
+	if withAttachments {
+		buf.WriteString(fmt.Sprintf("Content-Type: multipart/mixed; boundary=%s\n", boundary))
+		buf.WriteString(fmt.Sprintf("--%s\n", boundary))
+	}
+
+	buf.WriteString("Content-Type: text/plain; charset=utf-8\n")
+	buf.WriteString(m.Body)
+
+	if withAttachments {
+		for k, v := range m.Attachments {
+			buf.WriteString(fmt.Sprintf("\n\n--%s\n", boundary))
+			buf.WriteString("Content-Type: application/octet-stream\n")
+			buf.WriteString("Content-Transfer-Encoding: base64\n")
+			buf.WriteString(fmt.Sprintf("Content-Disposition: attachment; filename=%s\n", k))
+
+			b := make([]byte, base64.StdEncoding.EncodedLen(len(v)))
+			base64.StdEncoding.Encode(b, v)
+			buf.Write(b)
+			buf.WriteString(fmt.Sprintf("\n--%s", boundary))
+		}
+
+		buf.WriteString("--")
+	}
+
+	return buf.Bytes()
+}
+
+
+
+
+var subEntry *widget.Entry
+var messageEntry *widget.Entry
+
+func main() {
+	
+	myApp := app.New()
+	myWindow := myApp.NewWindow("Entry Widget")
+
+	labelSub := widget.NewLabel("Enter the subject:")
+	var subEntry = widget.NewEntry()
+	subContainer := container.NewVBox(labelSub,subEntry)
+
+
+	var messageEntry = widget.NewMultiLineEntry()
+	messageContaniner := container.NewGridWrap(fyne.NewSize(500,500),messageEntry)
+
+	DialogButton := widget.NewButton("Dialog",func(){
+		fmt.Println("Dialog")
+	})
+
+	SubmitButton := widget.NewButton("Submit",func(){
+		sender := New()
+		m := NewMessage(subEntry.Text,messageEntry.Text)
+		m.To = []string{"craiglobo1@gmail.com"}
+		err := sender.Send(m)
+		if err != nil{
+			fmt.Println(err)
+		} else{
+			fmt.Printf("mail sent to: craiglobo1@gmail.com")
+		}
+		// send(subEntry.Text,messageEntry.Text,"craiglobo1@gmail.com")
+	})
+	buttonRow := widget.NewHSplitContainer(DialogButton,SubmitButton)
+
+	topContanier := widget.NewVSplitContainer(subContainer,messageContaniner)
+
+	myWindow.SetContent(widget.NewVSplitContainer(topContanier,buttonRow))
+	myWindow.ShowAndRun()
+}
+
+
+// func send(subject string, body string,to string) {
+// 	from := "vmsautomail@gmail.com"
+// 	pass := "vmsmail123$" 
+
+// 	msg := "From: " + from + "\n" +
+// 		"To: " + to + "\n" +
+// 		"Subject: "+ subject +"\n\n" +
+// 		body
+
+// 	err := smtp.SendMail("smtp.gmail.com:587",
+// 		smtp.PlainAuth("", from, pass, "smtp.gmail.com"),
+// 		from, []string{to}, []byte(msg))
+
+// 	if err != nil {
+// 		log.Printf("smtp error: %s", err)
+// 		return
+// 	}
+	
+// 	log.Print("sent to:"+ to)
+// }
+
